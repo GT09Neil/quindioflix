@@ -321,6 +321,7 @@ COMMENT ON COLUMN planes.max_perfiles           IS 'Número máximo de perfiles 
 -- Catálogo de roles de usuario.
 -- Permite diferenciar usuarios normales de moderadores sin acoplar a empleados.
 -- Los moderadores son USUARIOS con rol especial, NO empleados internos.
+/*
 CREATE TABLE roles (
     id_rol      NUMBER GENERATED ALWAYS AS IDENTITY,
     nombre      VARCHAR2(50)    NOT NULL,
@@ -336,18 +337,17 @@ COMMENT ON TABLE  roles             IS '[C2] Catálogo de roles: usuario (están
 COMMENT ON COLUMN roles.id_rol      IS 'PK autoincremental del rol.';
 COMMENT ON COLUMN roles.nombre      IS 'Nombre del rol. Restringido a usuario y moderador.';
 COMMENT ON COLUMN roles.descripcion IS 'Descripción opcional del rol.';
+*/
 
 -- =============================================================================
--- 12. USUARIOS [C2] — FK a roles agregada
+-- 12. USUARIOS [C2]
 -- =============================================================================
 -- Relación reflexiva: usuario_referente → usuarios (sistema de referidos).
 -- email es UNIQUE para login y comunicaciones.
 -- FK a plan define el nivel de suscripción activa.
--- [C2] FK a roles: permite asignar rol (usuario normal o moderador).
 CREATE TABLE usuarios (
     id_usuario          NUMBER GENERATED ALWAYS AS IDENTITY,
     id_plan             NUMBER          NOT NULL,
-    id_rol              NUMBER          NOT NULL,  -- [C2] FK a roles
     nombre              VARCHAR2(150)   NOT NULL,
     email               VARCHAR2(200)   NOT NULL,
     telefono            VARCHAR2(20),
@@ -359,8 +359,6 @@ CREATE TABLE usuarios (
     CONSTRAINT uq_usuarios_email        UNIQUE (email),
     CONSTRAINT fk_usuarios_plan         FOREIGN KEY (id_plan)
         REFERENCES planes (id_plan),
-    CONSTRAINT fk_usuarios_rol          FOREIGN KEY (id_rol)
-        REFERENCES roles (id_rol),
     CONSTRAINT fk_usuarios_referente    FOREIGN KEY (usuario_referente)
         REFERENCES usuarios (id_usuario),
     -- Un usuario no puede referirse a sí mismo
@@ -370,7 +368,6 @@ CREATE TABLE usuarios (
 COMMENT ON TABLE  usuarios                      IS 'Usuarios de la plataforma. FK a plan y a rol. Relación reflexiva para referidos.';
 COMMENT ON COLUMN usuarios.id_usuario           IS 'PK autoincremental del usuario.';
 COMMENT ON COLUMN usuarios.id_plan              IS 'FK al plan de suscripción activo del usuario.';
-COMMENT ON COLUMN usuarios.id_rol               IS '[C2] FK al rol del usuario (usuario normal o moderador).';
 COMMENT ON COLUMN usuarios.nombre               IS 'Nombre completo del usuario.';
 COMMENT ON COLUMN usuarios.email                IS 'Email del usuario. UNIQUE para autenticación y comunicaciones.';
 COMMENT ON COLUMN usuarios.telefono             IS 'Teléfono de contacto. Opcional.';
@@ -592,16 +589,12 @@ CREATE TABLE reportes (
     motivo              VARCHAR2(500)   NOT NULL,
     estado              VARCHAR2(20)    DEFAULT 'pendiente' NOT NULL,
     fecha_creacion      DATE            DEFAULT SYSDATE NOT NULL,
-    id_moderador        NUMBER,         -- [C1] FK a usuarios (moderador = usuario con rol)
     fecha_resolucion    DATE,
     CONSTRAINT pk_reportes              PRIMARY KEY (id_reporte),
     CONSTRAINT fk_rpt_usuario           FOREIGN KEY (id_usuario)
         REFERENCES usuarios (id_usuario),
     CONSTRAINT fk_rpt_contenido         FOREIGN KEY (id_contenido)
         REFERENCES contenido (id_contenido),
-    -- [C1] FK ahora apunta a usuarios, NO a empleados
-    CONSTRAINT fk_rpt_moderador         FOREIGN KEY (id_moderador)
-        REFERENCES usuarios (id_usuario),
     CONSTRAINT ck_rpt_estado            CHECK (
         estado IN ('pendiente', 'en_revision', 'resuelto', 'rechazado')
     ),
@@ -609,14 +602,12 @@ CREATE TABLE reportes (
     CONSTRAINT ck_rpt_fecha_resolucion  CHECK (
         fecha_resolucion IS NULL OR fecha_resolucion >= fecha_creacion
     ),
-    -- [C5] Si estado es resuelto o rechazado, moderador y fecha_resolucion son obligatorios
+    -- [C5] Si estado es resuelto o rechazado
     CONSTRAINT ck_rpt_estado_resuelto   CHECK (
         (estado NOT IN ('resuelto', 'rechazado'))
         OR
-        (id_moderador IS NOT NULL AND fecha_resolucion IS NOT NULL)
-    ),
-    -- Un usuario no puede moderar su propio reporte
-    CONSTRAINT ck_rpt_no_auto_moderar   CHECK (id_usuario <> id_moderador)
+        (fecha_resolucion IS NOT NULL)
+    )
 );
 
 COMMENT ON TABLE  reportes                      IS '[C1] Reportes de contenido. Moderador = usuario con rol moderador (NO empleado). TRIGGER requerido para validar rol.';
@@ -626,7 +617,6 @@ COMMENT ON COLUMN reportes.id_contenido         IS 'FK al contenido reportado.';
 COMMENT ON COLUMN reportes.motivo               IS 'Motivo o descripción del reporte.';
 COMMENT ON COLUMN reportes.estado               IS 'Estado del reporte: pendiente, en_revision, resuelto, rechazado.';
 COMMENT ON COLUMN reportes.fecha_creacion       IS 'Fecha de creación del reporte.';
-COMMENT ON COLUMN reportes.id_moderador         IS '[C1] FK al usuario moderador que gestiona el reporte. NULL si aún no asignado. TRIGGER valida rol.';
 COMMENT ON COLUMN reportes.fecha_resolucion     IS 'Fecha de resolución del reporte. NULL si no resuelto. Obligatorio si estado = resuelto/rechazado.';
 
 -- =============================================================================

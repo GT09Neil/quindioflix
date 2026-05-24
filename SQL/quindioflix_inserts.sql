@@ -119,11 +119,6 @@ BEGIN
 END;
 /
 
--- Agregamos 2 moderadores (reemplazando rol de usuarios existentes)
-UPDATE usuarios
-   SET id_rol = (SELECT id_rol FROM roles WHERE nombre = 'moderador')
- WHERE email IN ('usuario1@quindioflix.com', 'usuario2@quindioflix.com');
-
 -- -----------------------------------------------------------------------------
 -- 4) PERFILES (50) - respetando trigger de max_perfiles por plan
 -- -----------------------------------------------------------------------------
@@ -152,7 +147,7 @@ SELECT u.id_usuario,
              JOIN planes p2 ON p2.id_plan = u2.id_plan
             WHERE p2.nombre = 'Estandar'
          )
-        WHERE rn <= 12
+        WHERE rn <= 14
    );
 
 -- Paso C: +6 perfiles extra en usuarios Premium (quedan con 2 perfiles)
@@ -255,6 +250,12 @@ SELECT c.id_contenido,
         WHERE cg.id_contenido = c.id_contenido
           AND cg.id_genero = g2.id_genero
  );
+ 
+ /*
+ select c.id_contenido, c.titulo, g.nombre as generos from contenido c 
+ join contenido_genero cg on c.id_contenido = cg.id_contenido
+ join generos g on cg.id_genero = g.id_genero where c.id_contenido = 40;
+*/
 
 -- -----------------------------------------------------------------------------
 -- 6) TEMPORADAS (15) y EPISODIOS (50)
@@ -347,35 +348,52 @@ DECLARE
     v_cont_count   NUMBER;
     v_perfil_id    NUMBER;
     v_cont_id      NUMBER;
+    v_insertados   NUMBER := 0;
+    v_intentos     NUMBER := 0;
+    v_max_intentos NUMBER := 500; -- Tope de seguridad para evitar bucle infinito
 BEGIN
     SELECT COUNT(*) INTO v_perfil_count FROM perfiles;
-    SELECT COUNT(*) INTO v_cont_count FROM contenido;
+    SELECT COUNT(*) INTO v_cont_count   FROM contenido;
 
-    FOR i IN 1..60 LOOP
+    WHILE v_insertados < 60 AND v_intentos < v_max_intentos LOOP
+        v_intentos := v_intentos + 1;
+
+        -- Selecciona un perfil aleatorio
         SELECT id_perfil
           INTO v_perfil_id
           FROM (
-                SELECT p.id_perfil, ROW_NUMBER() OVER (ORDER BY p.id_perfil) rn
-                  FROM perfiles p
+                SELECT id_perfil,
+                       ROW_NUMBER() OVER (ORDER BY DBMS_RANDOM.VALUE) rn
+                  FROM perfiles
                )
-         WHERE rn = MOD(i * 2, v_perfil_count) + 1;
+         WHERE rn = 1;
 
+        -- Selecciona un contenido aleatorio
         SELECT id_contenido
           INTO v_cont_id
           FROM (
-                SELECT c.id_contenido, ROW_NUMBER() OVER (ORDER BY c.id_contenido) rn
-                  FROM contenido c
+                SELECT id_contenido,
+                       ROW_NUMBER() OVER (ORDER BY DBMS_RANDOM.VALUE) rn
+                  FROM contenido
                )
-         WHERE rn = MOD(i * 5, v_cont_count) + 1;
+         WHERE rn = 1;
 
-        INSERT INTO calificaciones (id_perfil, id_contenido, estrellas, resenia, fecha)
-        VALUES (
-            v_perfil_id,
-            v_cont_id,
-            MOD(i, 5) + 1,
-            'Resenia automatica #' || TO_CHAR(i),
-            SYSDATE - MOD(i, 60)
-        );
+        BEGIN
+            INSERT INTO calificaciones (id_perfil, id_contenido, estrellas, resenia, fecha)
+            VALUES (
+                v_perfil_id,
+                v_cont_id,
+                TRUNC(DBMS_RANDOM.VALUE(1, 6)),         -- Estrellas entre 1 y 5
+                'Reseña de prueba #' || TO_CHAR(v_insertados + 1),
+                SYSDATE - TRUNC(DBMS_RANDOM.VALUE(0, 60)) -- Fecha aleatoria últimos 60 días
+            );
+            v_insertados := v_insertados + 1;
+
+        EXCEPTION
+            WHEN DUP_VAL_ON_INDEX THEN
+                NULL; -- Par duplicado: simplemente se omite y se reintenta
+        END;
+
     END LOOP;
 END;
 /
@@ -503,24 +521,9 @@ BEGIN
             );
         END IF;
     END LOOP;
-END;
+END; 
 /
 
 COMMIT;
 
--- -----------------------------------------------------------------------------
--- 11) VALIDACION RAPIDA DE MINIMOS
--- -----------------------------------------------------------------------------
-SELECT 'PLANES' tabla, COUNT(*) total FROM planes
-UNION ALL SELECT 'USUARIOS', COUNT(*) FROM usuarios
-UNION ALL SELECT 'PERFILES', COUNT(*) FROM perfiles
-UNION ALL SELECT 'CATEGORIAS', COUNT(*) FROM categorias
-UNION ALL SELECT 'GENEROS', COUNT(*) FROM generos
-UNION ALL SELECT 'CONTENIDO', COUNT(*) FROM contenido
-UNION ALL SELECT 'TEMPORADAS', COUNT(*) FROM temporadas
-UNION ALL SELECT 'EPISODIOS', COUNT(*) FROM episodios
-UNION ALL SELECT 'REPRODUCCIONES', COUNT(*) FROM reproducciones
-UNION ALL SELECT 'CALIFICACIONES', COUNT(*) FROM calificaciones
-UNION ALL SELECT 'PAGOS', COUNT(*) FROM pagos
-UNION ALL SELECT 'FAVORITOS', COUNT(*) FROM favoritos;
 
