@@ -289,6 +289,86 @@ END trg_reportes_moderador_rol;
 /
 
 -- =============================================================================
+-- [T5] TRIGGER: Verificar cuenta activa al insertar REPRODUCCIONES
+-- =============================================================================
+-- Se dispara BEFORE INSERT en reproducciones.
+-- Verifica que el usuario dueño del perfil tenga la cuenta en estado 'ACTIVO'.
+-- =============================================================================
+CREATE OR REPLACE TRIGGER trg_repro_cuenta_activa
+BEFORE INSERT ON reproducciones
+FOR EACH ROW
+DECLARE
+    v_estado_cuenta VARCHAR2(20);
+BEGIN
+    SELECT u.estado_cuenta
+      INTO v_estado_cuenta
+      FROM usuarios u
+      JOIN perfiles p ON p.id_usuario = u.id_usuario
+     WHERE p.id_perfil = :NEW.id_perfil;
+
+    IF v_estado_cuenta != 'ACTIVO' THEN
+        RAISE_APPLICATION_ERROR(
+            -20040,
+            'Error [T5]: El usuario dueño del perfil id_perfil = ' || :NEW.id_perfil
+            || ' no tiene una cuenta ACTIVA. Estado actual: ' || v_estado_cuenta || '.'
+        );
+    END IF;
+END trg_repro_cuenta_activa;
+/
+
+-- =============================================================================
+-- [T6] TRIGGER: Verificar reproducción del 50% antes de CALIFICACIONES
+-- =============================================================================
+-- Se dispara BEFORE INSERT ON calificaciones.
+-- Verifica en reproducciones que el avance sea al menos 50% para el perfil y
+-- el contenido (o sus episodios).
+-- =============================================================================
+CREATE OR REPLACE TRIGGER trg_cal_repro_50
+BEFORE INSERT ON calificaciones
+FOR EACH ROW
+DECLARE
+    v_max_avance NUMBER;
+BEGIN
+    SELECT NVL(MAX(r.porcentaje_avance), 0)
+      INTO v_max_avance
+      FROM reproducciones r
+      LEFT JOIN episodios e ON r.id_episodio = e.id_episodio
+      LEFT JOIN temporadas t ON e.id_temporada = t.id_temporada
+     WHERE r.id_perfil = :NEW.id_perfil
+       AND (r.id_contenido = :NEW.id_contenido OR t.id_contenido = :NEW.id_contenido);
+
+    IF v_max_avance < 50 THEN
+        RAISE_APPLICATION_ERROR(
+            -20041,
+            'Error [T6]: El perfil id_perfil = ' || :NEW.id_perfil
+            || ' debe reproducir al menos el 50% del contenido ' || :NEW.id_contenido
+            || ' antes de poder calificarlo. Avance actual: ' || v_max_avance || '%.'
+        );
+    END IF;
+END trg_cal_repro_50;
+/
+
+-- =============================================================================
+-- [T7] TRIGGER: Actualizar estado de cuenta después de insertar PAGOS
+-- =============================================================================
+-- Se dispara AFTER INSERT ON pagos (FOR EACH ROW, opción recomendada).
+-- Si el pago es exitoso ('aprobado'), actualiza el estado del usuario a 'ACTIVO'
+-- y la fecha_ultimo_pago a la fecha del pago.
+-- =============================================================================
+CREATE OR REPLACE TRIGGER trg_pagos_actualizar_estado
+AFTER INSERT ON pagos
+FOR EACH ROW
+BEGIN
+    IF :NEW.estado = 'aprobado' THEN
+        UPDATE usuarios
+           SET estado_cuenta = 'ACTIVO',
+               fecha_ultimo_pago = :NEW.fecha_pago
+         WHERE id_usuario = :NEW.id_usuario;
+    END IF;
+END trg_pagos_actualizar_estado;
+/
+
+-- =============================================================================
 -- FIN DE TRIGGERS — QUINDIOFLIX
 -- =============================================================================
 -- Resumen de triggers implementados:
@@ -299,7 +379,10 @@ END trg_reportes_moderador_rol;
 --   trg_fav_perfil_infantil    [T3b] → favoritos      (BEFORE INSERT/UPDATE)
 --   trg_cal_perfil_infantil    [T3c] → calificaciones  (BEFORE INSERT/UPDATE)
 --   trg_reportes_moderador_rol [T4] → reportes   (BEFORE INSERT/UPDATE)
+--   trg_repro_cuenta_activa    [T5] → reproducciones (BEFORE INSERT)
+--   trg_cal_repro_50           [T6] → calificaciones (BEFORE INSERT)
+--   trg_pagos_actualizar_est   [T7] → pagos          (AFTER INSERT FOR EACH ROW)
 --
--- Total: 6 triggers para 4 reglas de negocio.
--- Códigos de error: -20001 a -20031 (rango reservado para la aplicación).
+-- Total: 9 triggers para 7 reglas de negocio.
+-- Códigos de error: -20001 a -20041 (rango reservado para la aplicación).
 -- =============================================================================

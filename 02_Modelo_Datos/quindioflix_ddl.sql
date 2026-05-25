@@ -153,6 +153,7 @@ CREATE TABLE contenido (
     clasificacion_edad  VARCHAR2(5)     NOT NULL,
     fecha_agregado      DATE            DEFAULT SYSDATE NOT NULL,
     es_original         NUMBER(1)       DEFAULT 0 NOT NULL,
+    popularidad         NUMBER          DEFAULT 0 NOT NULL, -- [NT2] Popularidad en base a reproducciones completas
     CONSTRAINT pk_contenido                 PRIMARY KEY (id_contenido),
     CONSTRAINT fk_contenido_categoria       FOREIGN KEY (id_categoria)
         REFERENCES categorias (id_categoria),
@@ -178,6 +179,7 @@ COMMENT ON COLUMN contenido.sinopsis            IS 'Descripción o sinopsis del 
 COMMENT ON COLUMN contenido.clasificacion_edad  IS 'Clasificación etaria: TP, +7, +13, +16, +18.';
 COMMENT ON COLUMN contenido.fecha_agregado      IS 'Fecha en que se agregó el contenido a la plataforma. Default SYSDATE.';
 COMMENT ON COLUMN contenido.es_original         IS 'Indica si es producción original de QuindioFlix (1) o licenciado (0).';
+COMMENT ON COLUMN contenido.popularidad         IS 'Indicador de popularidad calculado por reproducciones superiores al 90%.';
 
 -- =============================================================================
 -- 6. CONTENIDO_GENERO (N:M)
@@ -354,6 +356,8 @@ CREATE TABLE usuarios (
     fecha_nacimiento    DATE            NOT NULL,
     ciudad              VARCHAR2(100),
     fecha_registro      DATE            DEFAULT SYSDATE NOT NULL,
+    estado_cuenta       VARCHAR2(20)    DEFAULT 'ACTIVO' NOT NULL,
+    fecha_ultimo_pago   DATE,
     usuario_referente   NUMBER,  -- NULL si no fue referido por nadie
     CONSTRAINT pk_usuarios              PRIMARY KEY (id_usuario),
     CONSTRAINT uq_usuarios_email        UNIQUE (email),
@@ -363,6 +367,7 @@ CREATE TABLE usuarios (
         REFERENCES roles (id_rol),
     CONSTRAINT fk_usuarios_referente    FOREIGN KEY (usuario_referente)
         REFERENCES usuarios (id_usuario),
+    CONSTRAINT ck_usuarios_estado       CHECK (estado_cuenta IN ('ACTIVO', 'INACTIVO', 'SUSPENDIDO')),
     -- Un usuario no puede referirse a sí mismo
     CONSTRAINT ck_usuarios_no_auto_ref  CHECK (usuario_referente <> id_usuario)
 );
@@ -377,6 +382,8 @@ COMMENT ON COLUMN usuarios.telefono             IS 'Teléfono de contacto. Opcio
 COMMENT ON COLUMN usuarios.fecha_nacimiento     IS 'Fecha de nacimiento del usuario.';
 COMMENT ON COLUMN usuarios.ciudad               IS 'Ciudad de residencia del usuario. Opcional.';
 COMMENT ON COLUMN usuarios.fecha_registro       IS 'Fecha de registro del usuario. Default SYSDATE.';
+COMMENT ON COLUMN usuarios.estado_cuenta        IS 'Estado actual de la cuenta del usuario: ACTIVO, INACTIVO, SUSPENDIDO.';
+COMMENT ON COLUMN usuarios.fecha_ultimo_pago    IS 'Fecha del último pago exitoso realizado por el usuario.';
 COMMENT ON COLUMN usuarios.usuario_referente    IS 'FK reflexiva: usuario que refirió a este usuario. NULL si no fue referido.';
 
 -- =============================================================================
@@ -510,6 +517,12 @@ CREATE TABLE reproducciones (
     CONSTRAINT ck_repro_porcentaje          CHECK (porcentaje_avance BETWEEN 0 AND 100),
     -- fecha_fin debe ser posterior a fecha_inicio (si existe)
     CONSTRAINT ck_repro_fechas              CHECK (fecha_fin IS NULL OR fecha_fin >= fecha_inicio)
+)
+PARTITION BY RANGE (fecha_inicio) (
+    PARTITION p_2024 VALUES LESS THAN (TIMESTAMP '2025-01-01 00:00:00') TABLESPACE TS_QUINDIOFLIX_2024,
+    PARTITION p_2025 VALUES LESS THAN (TIMESTAMP '2026-01-01 00:00:00') TABLESPACE TS_QUINDIOFLIX_2025,
+    PARTITION p_2026 VALUES LESS THAN (TIMESTAMP '2027-01-01 00:00:00') TABLESPACE TS_QUINDIOFLIX_2026,
+    PARTITION p_max VALUES LESS THAN (MAXVALUE) TABLESPACE TS_QUINDIOFLIX_MAX
 );
 
 COMMENT ON TABLE  reproducciones                    IS 'Registro de sesiones de reproducción. XOR entre contenido directo y episodio. TRIGGER requerido para restricción infantil.';
