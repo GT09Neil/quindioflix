@@ -20,7 +20,7 @@ SELECT * FROM (
 ) WHERE ROWNUM <= 10;
 
 -- b) Consulta que recibe mes y año y muestra ingresos por plan
-DEFINE mes = '05'
+DEFINE mes = '11'
 DEFINE anio = '2025'
 SELECT pl.nombre as plan, SUM(pa.monto) as ingresos
 FROM pagos pa
@@ -30,7 +30,7 @@ WHERE TO_CHAR(pa.fecha_pago, 'MM') = '&mes' AND TO_CHAR(pa.fecha_pago, 'YYYY') =
 GROUP BY pl.nombre;
 
 -- c) Consulta que recibe un género y muestra la calificación promedio por categoría
-DEFINE genero = 'Accion'
+DEFINE genero = 'Infantil'
 SELECT cat.nombre as categoria, AVG(cal.estrellas) as calificacion_promedio
 FROM calificaciones cal
 JOIN contenido c ON cal.id_contenido = c.id_contenido
@@ -48,6 +48,7 @@ GROUP BY cat.nombre;
 SELECT * FROM (
     SELECT u.ciudad, p.nombre as plan
     FROM usuarios u
+    JOIN PLANES P ON U.ID_PLAN = P.ID_PLAN
     WHERE u.estado_cuenta = 'ACTIVO'
       AND u.id_plan IN (1,2,3)
 )
